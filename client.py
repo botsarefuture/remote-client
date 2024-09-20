@@ -134,6 +134,8 @@ class DeviceClient:
             self.log(result)
         else:
             # Execute unrecognized commands using Bash
+            if "reboot" in command["command"]:
+                self.send_command_result(command, "starting reboot")
             result = self.run_bash_command(command["command"])
             self.send_command_result(command, result)
 
