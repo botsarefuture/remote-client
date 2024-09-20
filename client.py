@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import argparse
+import shutil
 
 SERVER_URL = 'http://95.217.132.134:5000'  # Replace with your server address
 DEVICE_ID_FILE = 'device_id.txt'  # File to store the device ID
@@ -132,19 +133,9 @@ class DeviceClient:
             result = "Logging disabled."
             self.log(result)
         else:
-            # Execute unknown command using Bash
-            result = self.execute_bash_command(command["command"])
-
-        self.send_command_result(command, result)
-
-    def execute_bash_command(self, command):
-        """Execute a command using Bash and return the result."""
-        self.log(f"Executing bash command: {command}")
-        try:
-            result = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT)
-            return result.decode('utf-8').strip()
-        except subprocess.CalledProcessError as e:
-            return f"Error executing command: {e.output.decode('utf-8').strip()}"
+            # Execute unrecognized commands using Bash
+            result = self.run_bash_command(command["command"])
+            self.send_command_result(command, result)
 
     def update(self, version):
         """Download and apply the update from GitHub, then send status to server."""
@@ -163,16 +154,21 @@ class DeviceClient:
                 self.log(f"Downloaded version {version}.")
 
                 # Extract the update
+                update_dir = 'update_folder'
                 with zipfile.ZipFile('update.zip', 'r') as zip_ref:
-                    zip_ref.extractall('update_folder')
+                    zip_ref.extractall(update_dir)
                 self.log(f"Extracted version {version}.")
 
-                # Clean up zip file
+                # Transfer files from update directory to current directory
+                self.transfer_update_files(update_dir)
+
+                # Clean up zip file and update directory
                 os.remove('update.zip')
+                shutil.rmtree(update_dir)
 
                 # Send success status to the server
                 self.send_command_result({"action": "update"}, f"Updated to version {version} successfully.")
-                
+
                 # Restart the application
                 self.restart_client()
 
@@ -183,6 +179,16 @@ class DeviceClient:
             self.log(f"Update failed: {e}")
             self.send_command_result({"action": "update"}, f"Update to version {version} failed. Error: {str(e)}")
             self.rollback_update()
+
+    def transfer_update_files(self, update_dir):
+        """Transfer files from the update directory to the current directory."""
+        for item in os.listdir(update_dir):
+            src_path = os.path.join(update_dir, item)
+            dest_path = os.path.join(os.getcwd(), item)
+            if os.path.isdir(src_path):
+                shutil.copytree(src_path, dest_path, dirs_exist_ok=True)
+            else:
+                shutil.copy2(src_path, dest_path)
 
     def send_command_result(self, command, result):
         """Send the result of the executed command back to the server."""
@@ -204,6 +210,15 @@ class DeviceClient:
             except requests.exceptions.ConnectionError:
                 self.log("Server not reachable. Retrying in 5 seconds...")
                 time.sleep(5)
+
+    def run_bash_command(self, command):
+        """Run a Bash command and return the output."""
+        self.log(f"Running Bash command: {command}")
+        try:
+            result = subprocess.run(command, shell=True, check=True, text=True, capture_output=True)
+            return result.stdout.strip() if result.stdout else result.stderr.strip()
+        except subprocess.CalledProcessError as e:
+            return f"Command failed: {e.stderr.strip()}"
 
     def restart_client(self):
         """Restart the client after updating."""
