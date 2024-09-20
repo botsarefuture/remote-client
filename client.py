@@ -240,19 +240,19 @@ class DeviceClient:
         except subprocess.CalledProcessError as e:
             return f"Command failed: {e.stderr.strip()}"
 
-def restart_client(self):
-    """Restart the client after updating."""
-    self.log("Restarting client...")
+    def restart_client(self):
+        """Restart the client after updating."""
+        self.log("Restarting client...")
 
-    try:
-        # Attempt to restart the service using systemctl
-        result = subprocess.run(
-            ['sudo', 'systemctl', 'restart', 'device_client'],
-            check=True,
-            text=True,
-            capture_output=True
-        )
-        self.log(f"Restart command output: {result.stdout}")
+        try:
+            # Attempt to restart the service using systemctl
+            result = subprocess.run(
+                ['sudo', 'systemctl', 'restart', 'device_client'],
+                check=True,
+                text=True,
+                capture_output=True
+            )
+            self.log(f"Restart command output: {result.stdout}")
 
         except subprocess.CalledProcessError as e:
             # If the command fails, check if it's due to permissions
