@@ -24,7 +24,12 @@ class DeviceClient:
         if self.device_id:
             return "MEOW" if not self.is_interactive() else None
         else:
-            return input("Please enter the device location: ")
+            # Automatically provide a default location if not interactive
+            if self.is_interactive():
+                return input("Please enter the device location: ")
+            else:
+                return "DefaultLocation"  # Provide a default location for non-interactive runs
+
 
     def is_interactive(self):
         """Check if the script is running in an interactive environment."""
