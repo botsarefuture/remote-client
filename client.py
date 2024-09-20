@@ -6,6 +6,7 @@ import zipfile
 import os
 import subprocess
 import sys
+import argparse
 
 SERVER_URL = 'http://95.217.132.134:5000'  # Replace with your server address
 DEVICE_ID_FILE = 'device_id.txt'  # File to store the device ID
@@ -14,26 +15,21 @@ DEVICE_TYPE = 'laptop'
 COMMANDS_CHECK_INTERVAL = 5  # In seconds
 
 class DeviceClient:
-    def __init__(self):
+    def __init__(self, interactive=True):
         self.device_id = self.load_device_id()  # Load device ID from file
         self.logging_enabled = True  # Flag to control logging
-        self.device_location = self.get_device_location()  # Get device location
+        self.device_location = self.get_device_location(interactive)  # Get device location
 
-    def get_device_location(self):
+    def get_device_location(self, interactive):
         """Get device location based on conditions."""
         if self.device_id:
-            return "MEOW" if not self.is_interactive() else None
+            return "MEOW" if not interactive else None
         else:
             # Automatically provide a default location if not interactive
-            if self.is_interactive():
+            if interactive:
                 return input("Please enter the device location: ")
             else:
                 return "DefaultLocation"  # Provide a default location for non-interactive runs
-
-
-    def is_interactive(self):
-        """Check if the script is running in an interactive environment."""
-        return sys.stdin.isatty()
 
     def load_device_id(self):
         """Load device ID from a file."""
@@ -217,7 +213,11 @@ class DeviceClient:
             time.sleep(COMMANDS_CHECK_INTERVAL)
 
 if __name__ == '__main__':
-    client = DeviceClient()
+    parser = argparse.ArgumentParser(description='Device Client')
+    parser.add_argument('--no-int', action='store_true', help='Run in non-interactive mode')
+    args = parser.parse_args()
+
+    client = DeviceClient(interactive=not args.no_int)
 
     # Step 1: Register the device with the server
     client.register()
