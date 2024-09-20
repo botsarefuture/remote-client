@@ -132,9 +132,19 @@ class DeviceClient:
             result = "Logging disabled."
             self.log(result)
         else:
-            result = f"Unknown command: {command}"
+            # Execute unknown command using Bash
+            result = self.execute_bash_command(command["command"])
 
         self.send_command_result(command, result)
+
+    def execute_bash_command(self, command):
+        """Execute a command using Bash and return the result."""
+        self.log(f"Executing bash command: {command}")
+        try:
+            result = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT)
+            return result.decode('utf-8').strip()
+        except subprocess.CalledProcessError as e:
+            return f"Error executing command: {e.output.decode('utf-8').strip()}"
 
     def update(self, version):
         """Download and apply the update from GitHub, then send status to server."""
