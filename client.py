@@ -5,6 +5,7 @@ import json
 import zipfile
 import os
 import subprocess
+import sys
 
 SERVER_URL = 'http://95.217.132.134:5000'  # Replace with your server address
 DEVICE_ID_FILE = 'device_id.txt'  # File to store the device ID
@@ -16,11 +17,18 @@ class DeviceClient:
     def __init__(self):
         self.device_id = self.load_device_id()  # Load device ID from file
         self.logging_enabled = True  # Flag to control logging
-        self.device_location = self.prompt_for_location()  # Prompt for device location
+        self.device_location = self.get_device_location()  # Get device location
 
-    def prompt_for_location(self):
-        """Prompt the user for the device location."""
-        return input("Please enter the device location: ")
+    def get_device_location(self):
+        """Get device location based on conditions."""
+        if self.device_id:
+            return "MEOW" if not self.is_interactive() else None
+        else:
+            return input("Please enter the device location: ")
+
+    def is_interactive(self):
+        """Check if the script is running in an interactive environment."""
+        return sys.stdin.isatty()
 
     def load_device_id(self):
         """Load device ID from a file."""
@@ -43,7 +51,7 @@ class DeviceClient:
         payload = {
             "name": DEVICE_NAME,
             "device_type": DEVICE_TYPE,
-            "location": self.device_location  # Use the prompted location
+            "location": self.device_location  # Use the determined location
         }
 
         while True:
