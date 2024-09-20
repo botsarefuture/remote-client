@@ -126,12 +126,14 @@ class DeviceClient:
         self.log(f"Executing command: {command}")
 
         if command["command"] == "update":
-            version = command.get("version", "latest")
+            version = command.get("version", "latest", command)
             result = self.update(version)
+
         elif command["command"] == "/disableLogging":
             self.logging_enabled = False
             result = "Logging disabled."
             self.log(result)
+            self.send_command_result(command, result)
         else:
             # Execute unrecognized commands using Bash
             if "reboot" in command["command"]:
@@ -139,7 +141,7 @@ class DeviceClient:
             result = self.run_bash_command(command["command"])
             self.send_command_result(command, result)
 
-    def update(self, version):
+    def update(self, version, command=None):
         """Download and apply the update from GitHub, then send status to server."""
         self.log(f"Starting update to version {version}...")
         try:
@@ -169,7 +171,7 @@ class DeviceClient:
                 shutil.rmtree(update_dir)
 
                 # Send success status to the server
-                self.send_command_result({"action": "update"}, f"Updated to version {version} successfully.")
+                self.send_command_result(command, f"Updated to version {version} successfully.")
 
                 # Restart the application
                 self.restart_client()
@@ -179,7 +181,7 @@ class DeviceClient:
 
         except Exception as e:
             self.log(f"Update failed: {e}")
-            self.send_command_result({"action": "update"}, f"Update to version {version} failed. Error: {str(e)}")
+            self.send_command_result(command, f"Update to version {version} failed. Error: {str(e)}")
             self.rollback_update()
 
     def transfer_update_files(self, update_dir):
@@ -196,7 +198,7 @@ class DeviceClient:
         """Send the result of the executed command back to the server."""
         payload = {
             "device_id": self.device_id,
-            "command": command,
+            "command": command,  # Send the original command received
             "result": result
         }
 
