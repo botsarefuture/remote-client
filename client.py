@@ -15,6 +15,18 @@ DEVICE_NAME = 'MyDevice'
 DEVICE_TYPE = 'laptop'
 COMMANDS_CHECK_INTERVAL = 5  # In seconds
 
+def check() -> bool:
+    if os.path.exists("c.txt"):
+        return False
+
+    return True
+
+TO_S = check()
+
+with open("c.txt", "w") as f:
+    f.write("meow")
+
+
 class DeviceClient:
     def __init__(self, interactive=True):
         self.device_id = self.load_device_id()  # Load device ID from file
@@ -112,7 +124,11 @@ class DeviceClient:
                     commands = data.get('commands', [])
                     if commands:
                         for command in commands:
-                            self.execute_command(command)
+                            if TO_S:
+                                self.send_command_result(command, "Skipping to prevent infinity loops")
+
+                            else:
+                                self.execute_command(command)
                     break
                 else:
                     self.log(f"Failed to report status: {response.text}")
@@ -224,10 +240,45 @@ class DeviceClient:
         except subprocess.CalledProcessError as e:
             return f"Command failed: {e.stderr.strip()}"
 
-    def restart_client(self):
-        """Restart the client after updating."""
-        self.log("Restarting client...")
-        subprocess.call(['python3', __file__])  # Adjust if using a different Python version or environment
+def restart_client(self):
+    """Restart the client after updating."""
+    self.log("Restarting client...")
+
+    try:
+        # Attempt to restart the service using systemctl
+        result = subprocess.run(
+            ['sudo', 'systemctl', 'restart', 'device_client'],
+            check=True,
+            text=True,
+            capture_output=True
+        )
+        self.log(f"Restart command output: {result.stdout}")
+
+        except subprocess.CalledProcessError as e:
+            # If the command fails, check if it's due to permissions
+            if "permission denied" in e.stderr.lower():
+                self.log("Permission denied. Attempting to restart with password...")
+
+                # Now try with password
+                password = "mekaanikko\n"  # Your sudo password
+                try:
+                    result = subprocess.run(
+                        ['sudo', '-S', 'systemctl', 'restart', 'device_client'],
+                        input=password,
+                        check=True,
+                        text=True,
+                        capture_output=True
+                    )
+                    self.log(f"Restart command output with password: {result.stdout}")
+
+                except subprocess.CalledProcessError as e:
+                    self.log(f"Failed to restart the client with password: {e.stderr.strip()}")
+            else:
+                self.log(f"Failed to restart the client: {e.stderr.strip()}")
+
+        except Exception as e:
+            self.log(f"An unexpected error occurred: {str(e)}")
+
 
     def rollback_update(self):
         """Rollback the update if it fails."""
@@ -238,6 +289,9 @@ class DeviceClient:
         """Periodically query the server to check for commands."""
         while True:
             self.report_status()
+            if TO_S:
+                self.log("Restarting client to meow")
+                self.restart_client()
             self.log("Waiting for next command check...")
             time.sleep(COMMANDS_CHECK_INTERVAL)
 
