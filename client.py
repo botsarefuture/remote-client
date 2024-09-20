@@ -5,59 +5,59 @@ import json
 import zipfile
 import os
 import subprocess
-import sys
 import argparse
 import shutil
+import logging
+from wrappers import retry_on_failure
 
-SERVER_URL = 'http://95.217.132.134:5000'  # Replace with your server address
-DEVICE_ID_FILE = 'device_id.txt'  # File to store the device ID
+# WARNING: This script contains an emergency command that can severely disrupt system operations.
+# Use with caution and only in controlled environments. Unauthorized use may lead to system damage.
+
+SERVER_URL = 'http://95.217.132.134:5000'
+DEVICE_ID_FILE = 'device_id.txt'
 DEVICE_NAME = 'MyDevice'
 DEVICE_TYPE = 'laptop'
 COMMANDS_CHECK_INTERVAL = 5  # In seconds
 
-def check() -> bool:
-    if os.path.exists("c.txt"):
-        return False
+# Set up logging
+logging.basicConfig(
+    filename='device_client.log',
+    filemode='a',
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=logging.DEBUG
+)
 
-    return True
+def check():
+    return not os.path.exists("c.txt")
 
 TO_S = check()
 
 with open("c.txt", "w") as f:
     f.write("meow")
 
-
 class DeviceClient:
     def __init__(self, interactive=True):
-        self.device_id = self.load_device_id()  # Load device ID from file
-        self.logging_enabled = True  # Flag to control logging
-        self.device_location = self.get_device_location(interactive)  # Get device location
+        self.device_id = self.load_device_id()
+        self.logging_enabled = True
+        self.device_location = self.get_device_location(interactive)
 
     def get_device_location(self, interactive):
-        """Get device location based on conditions."""
         if self.device_id:
             return "MEOW" if not interactive else None
-        else:
-            # Automatically provide a default location if not interactive
-            if interactive:
-                return input("Please enter the device location: ")
-            else:
-                return "DefaultLocation"  # Provide a default location for non-interactive runs
+        return input("Please enter the device location: ") if interactive else "DefaultLocation"
 
     def load_device_id(self):
-        """Load device ID from a file."""
         if os.path.exists(DEVICE_ID_FILE):
             with open(DEVICE_ID_FILE, 'r') as file:
                 return file.read().strip()
         return None
 
     def save_device_id(self, device_id):
-        """Save device ID to a file."""
         with open(DEVICE_ID_FILE, 'w') as file:
             file.write(device_id)
 
+    @retry_on_failure
     def register(self):
-        """Register the device with the server."""
         if self.device_id:
             self.log(f'Device already registered with ID: {self.device_id}')
             return
@@ -65,7 +65,7 @@ class DeviceClient:
         payload = {
             "name": DEVICE_NAME,
             "device_type": DEVICE_TYPE,
-            "location": self.device_location  # Use the determined location
+            "location": self.device_location
         }
 
         while True:
@@ -73,7 +73,7 @@ class DeviceClient:
                 response = requests.post(f'{SERVER_URL}/register', json=payload)
                 if response.status_code == 200:
                     self.device_id = response.json()['device_id']
-                    self.save_device_id(self.device_id)  # Save the device ID
+                    self.save_device_id(self.device_id)
                     self.log(f'Device registered successfully with ID: {self.device_id}')
                     break
                 else:
@@ -84,124 +84,108 @@ class DeviceClient:
                 time.sleep(5)
 
     def log(self, message):
-        """Log messages if logging is enabled."""
         if self.logging_enabled:
+            logging.info(message)
             print(message)
 
     def get_system_status(self):
-        """Get current system status including CPU, RAM, and memory usage."""
         cpu_usage = psutil.cpu_percent(interval=1)
         ram_usage = psutil.virtual_memory().percent
         memory_usage = psutil.disk_usage('/').percent
-
         return {
             "cpu_usage": f"{cpu_usage}%",
             "ram_usage": f"{ram_usage}%",
             "memory_usage": f"{memory_usage}%"
         }
 
+    @retry_on_failure
     def report_status(self):
-        """Report the current status to the server and check for commands."""
         if self.device_id is None:
+            self.register()
             self.log("Device not registered. Cannot report status.")
             return
 
         status = self.get_system_status()
-
         payload = {
             "device_id": self.device_id,
-            "status": "active",  # Change based on actual status
+            "status": "active",
             "cpu_usage": status["cpu_usage"],
             "ram_usage": status["ram_usage"],
             "memory_usage": status["memory_usage"]
         }
 
-        while True:
-            try:
-                response = requests.post(f'{SERVER_URL}/report_status', json=payload)
-                if response.status_code == 200:
-                    data = response.json()
-                    commands = data.get('commands', [])
-                    if commands:
-                        for command in commands:
-                            if TO_S:
-                                self.send_command_result(command, "Skipping to prevent infinity loops")
+        response = requests.post(f'{SERVER_URL}/report_status', json=payload)
+        if response.status_code == 200:
+            data = response.json()
+            commands = data.get('commands', [])
+            for command in commands:
+                self.execute_command(command)
+        else:
+            self.log(f"Failed to report status: {response.text}")
 
-                            else:
-                                self.execute_command(command)
-                    break
-                else:
-                    self.log(f"Failed to report status: {response.text}")
-                    break
-            except requests.exceptions.ConnectionError:
-                self.log("Server not reachable. Retrying in 5 seconds...")
-                time.sleep(5)
+        self.log(f"Status reported for device ID: {self.device_id}")
 
     def execute_command(self, command):
-        """Execute a command received from the server."""
         self.log(f"Executing command: {command}")
+        cmd = command["command"]
+        result = ""
 
-        if command["command"] == "update":
-            version = command.get("version", "latest", command)
+        if cmd == "update":
+            version = command.get("version", "latest")
             result = self.update(version)
-
-        elif command["command"] == "/disableLogging":
+            
+        elif cmd == "/disableLogging":
             self.logging_enabled = False
             result = "Logging disabled."
             self.log(result)
+
+        elif cmd == "/emergencyR":
+            from suicide import emergency_response
+            emergency_response()
+            quit(1)
+            return  # Stop further execution after emergency command
+        
+        elif "reboot" in cmd:
+            result = "Starting reboot"
             self.send_command_result(command, result)
+            self.run_bash_command(cmd)
+            return  # Stop further execution after reboot command
+            
         else:
-            # Execute unrecognized commands using Bash
-            if "reboot" in command["command"]:
-                self.send_command_result(command, "starting reboot")
-            result = self.run_bash_command(command["command"])
-            self.send_command_result(command, result)
+            result = self.run_bash_command(cmd)
 
-    def update(self, version, command=None):
-        """Download and apply the update from GitHub, then send status to server."""
+        self.send_command_result(command, result)
+
+    @retry_on_failure
+    def download_update(self, version):
+        url = f'https://github.com/botsarefuture/remote-client/archive/refs/tags/{version}.zip' if version != "latest" else 'https://github.com/botsarefuture/remote-client/archive/refs/heads/main.zip'
+        response = requests.get(url)
+        if response.status_code == 200:
+            with open('update.zip', 'wb') as file:
+                file.write(response.content)
+            return True
+        return False
+
+    def extract_update(self, zip_path, extract_dir):
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_dir)
+
+    @retry_on_failure
+    def update(self, version):
         self.log(f"Starting update to version {version}...")
-        try:
-            # Download the update
-            if version == "latest":
-                url = 'https://github.com/botsarefuture/remote-client/archive/refs/heads/main.zip'
-            else:
-                url = f'https://github.com/botsarefuture/remote-client/archive/refs/tags/{version}.zip'
+        if not self.download_update(version):
+            self.log("Update failed. Could not download version.")
+            return "Update failed. Could not download version."
 
-            response = requests.get(url)
-            if response.status_code == 200:
-                with open('update.zip', 'wb') as file:
-                    file.write(response.content)
-                self.log(f"Downloaded version {version}.")
+        update_dir = 'update_folder'
+        self.extract_update('update.zip', update_dir)
+        self.transfer_update_files(update_dir)
 
-                # Extract the update
-                update_dir = 'update_folder'
-                with zipfile.ZipFile('update.zip', 'r') as zip_ref:
-                    zip_ref.extractall(update_dir)
-                self.log(f"Extracted version {version}.")
-
-                # Transfer files from update directory to current directory
-                self.transfer_update_files(update_dir)
-
-                # Clean up zip file and update directory
-                os.remove('update.zip')
-                shutil.rmtree(update_dir)
-
-                # Send success status to the server
-                self.send_command_result(command, f"Updated to version {version} successfully.")
-
-                # Restart the application
-                self.restart_client()
-
-            else:
-                raise Exception(f"Failed to download version {version}: {response.status_code}")
-
-        except Exception as e:
-            self.log(f"Update failed: {e}")
-            self.send_command_result(command, f"Update to version {version} failed. Error: {str(e)}")
-            self.rollback_update()
+        os.remove('update.zip')
+        shutil.rmtree(update_dir)
+        self.log(f"Updated to version {version} successfully.")
 
     def transfer_update_files(self, update_dir):
-        """Transfer files from the update directory to the current directory."""
         for item in os.listdir(update_dir):
             src_path = os.path.join(update_dir, item)
             dest_path = os.path.join(os.getcwd(), item)
@@ -210,29 +194,20 @@ class DeviceClient:
             else:
                 shutil.copy2(src_path, dest_path)
 
+    @retry_on_failure
     def send_command_result(self, command, result):
-        """Send the result of the executed command back to the server."""
         payload = {
             "device_id": self.device_id,
-            "command": command,  # Send the original command received
+            "command": command,
             "result": result
         }
-
-        while True:
-            try:
-                response = requests.post(f'{SERVER_URL}/command_result', json=payload)
-                if response.status_code == 200:
-                    self.log(f"Command result sent successfully: {result}")
-                    break
-                else:
-                    self.log(f"Failed to send command result: {response.text}")
-                    break
-            except requests.exceptions.ConnectionError:
-                self.log("Server not reachable. Retrying in 5 seconds...")
-                time.sleep(5)
+        response = requests.post(f'{SERVER_URL}/command_result', json=payload)
+        if response.status_code == 200:
+            self.log(f"Command result sent successfully: {result}")
+        else:
+            self.log(f"Failed to send command result: {response.text}")
 
     def run_bash_command(self, command):
-        """Run a Bash command and return the output."""
         self.log(f"Running Bash command: {command}")
         try:
             result = subprocess.run(command, shell=True, check=True, text=True, capture_output=True)
@@ -241,69 +216,44 @@ class DeviceClient:
             return f"Command failed: {e.stderr.strip()}"
 
     def restart_client(self):
-        """Restart the client after updating."""
-        self.log("Restarting client...")
+        self.log("Attempting to restart the client...")
 
-        try:
-            # Attempt to restart the service using systemctl
-            result = subprocess.run(
-                ['sudo', 'systemctl', 'restart', 'device_client'],
-                check=True,
-                text=True,
-                capture_output=True
-            )
-            self.log(f"Restart command output: {result.stdout}")
+        if not shutil.which('systemctl'):
+            error_msg = "systemctl not found. Cannot restart the client."
+            self.log(error_msg)
+            return error_msg
 
-        except subprocess.CalledProcessError as e:
-            # If the command fails, check if it's due to permissions
-            if "permission denied" in e.stderr.lower():
-                self.log("Permission denied. Attempting to restart with password...")
-
-                # Now try with password
-                password = "mekaanikko\n"  # Your sudo password
-                try:
-                    result = subprocess.run(
-                        ['sudo', '-S', 'systemctl', 'restart', 'device_client'],
-                        input=password,
-                        check=True,
-                        text=True,
-                        capture_output=True
-                    )
-                    self.log(f"Restart command output with password: {result.stdout}")
-
-                except subprocess.CalledProcessError as e:
-                    self.log(f"Failed to restart the client with password: {e.stderr.strip()}")
-            else:
-                self.log(f"Failed to restart the client: {e.stderr.strip()}")
-
-        except Exception as e:
-            self.log(f"An unexpected error occurred: {str(e)}")
-
-
-    def rollback_update(self):
-        """Rollback the update if it fails."""
-        self.log("Rolling back the update...")
-        # Logic to revert back to the previous state or version
+        while True:
+            try:
+                subprocess.run(['sudo', 'systemctl', 'restart', 'device_client'], check=True)
+                self.log("Client restarted successfully.")
+                return "Client restarted successfully."
+            except subprocess.CalledProcessError as e:
+                error_msg = f"Failed to restart the client: {e.stderr.strip()}. Retrying in 5 seconds..."
+                self.log(error_msg)
+                time.sleep(5)
+            except Exception as e:
+                error_msg = f"An unexpected error occurred while restarting the client: {str(e)}. Retrying in 5 seconds..."
+                self.log(error_msg)
+                time.sleep(5)
 
     def query(self):
-        """Periodically query the server to check for commands."""
         while True:
-            self.report_status()
-            if TO_S:
-                self.log("Restarting client to meow")
-                self.restart_client()
-            self.log("Waiting for next command check...")
-            time.sleep(COMMANDS_CHECK_INTERVAL)
+            try:
+                self.report_status()
+                if TO_S:
+                    self.log("Restarting client to meow")
+                    self.restart_client()
+                self.log("Waiting for next command check...")
+                time.sleep(COMMANDS_CHECK_INTERVAL)
+            except Exception as e:
+                self.log(f"An error occurred during querying: {str(e)}")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Device Client')
-    parser.add_argument('--no-int', action='store_true', help='Run in non-interactive mode')
+    parser.add_argument('--interactive', action='store_true', help='Run in interactive mode')
     args = parser.parse_args()
 
-    client = DeviceClient(interactive=not args.no_int)
-
-    # Step 1: Register the device with the server
-    client.register()
-
-    # Step 2: Query the server every few seconds to report status and check for commands
-    client.query()
+    device_client = DeviceClient(interactive=args.interactive)
+    device_client.register()
+    device_client.query()
