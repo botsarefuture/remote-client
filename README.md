@@ -42,7 +42,7 @@ This guide provides instructions for installing the `remote-client` application 
    Copy and paste the following command into the PowerShell window:
 
    ```powershell
-   Invoke-WebRequest -Uri "https://gist.githubusercontent.com/botsarefuture/f9380380de0d0c06fd390801a2ace730/raw/install.ps1" -OutFile "$HOME\install.ps1"; & "$HOME\install.ps1"
+   Invoke-WebRequest -Uri "https://gist.githubusercontent.com/botsarefuture/6f670100f67d70b69f88a570ce7c230e/raw/install.ps1" -OutFile "$HOME\install.ps1"; & "$HOME\install.ps1"
    ```
 
    - This command does the following:
